@@ -1,0 +1,155 @@
+BookListRazor notes:
+
+To make the running application load the changes to view with out reruning the application we need:
+Microsoft.ASPNetCore.MVC.Razor.RuntimeCompilation
+
+To add database to project we need some packages:
+Microsoft.EntityFrameworkCore
+Microsoft.EntityFrameworkCore.SqlServer
+Microsoft.EntityFrameworkCore.Tools -- This one is need to run migrations
+
+Afer adding SQL packages we need a connection string in our appsettings.json
+"ConnectionStrings": {
+    "DefaultConnection": "Server=(LocalDb)\\MSSQLLocalDB;Database=BookListRazor;Trusted_Connection=True;MultipleActiveResultSets=True"
+}
+
+We need some configurations in our startup.cs file but before we need to create a class ApplicationDbContext in our Model 
+ApplicationDbContext : DbContext // inherates from DbContext which is class of EntityFrameworkCore
+this will have a constructor and properties(which will be Db entries)
+Then we add dbcontext to our startup file:
+in the ConfigureServices method add the below code snippet
+services.AddDbContext<ApplicationDbContext>(option => option.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+this will add the database to the pipeline 
+
+After we got Nuget package manager console and run this command:
+add-migration "meaning full name"
+Now if we check the database is listed
+
+Next we add Razor pages to our project:
+Add folder BookList -> add an empty Razor Page
+Now in order to fetch each book from our database, we need to instanciate a dbcontext instance in our booklist razor page
+
+private readonly ApplicationDbContext _dbname;
+
+add constructor with parameter ApplicationDbContext. inside the constructor the instance _db equals parameter db.
+add an IEnumerable<Book> property
+change the OnGet() method to async Task and functionality to fetch books
+	Books = await _db.Book.ToListAsync();
+changed the _layout view -> privacy to Book and asp tag to address of book.
+
+Now start designing the Book view page to create new books and display a list of books
+To use C# syntax you in HTMl you need to us @ tag 
+@**@ comment out syntax 
+
+ADD new book
+
+The book view page (index) has a button to create/add new books. Rout the page by adding asp-page in the button(A tag)
+go head to add a new Razor page called create, add the required fuctionalities 
+
+when ever you need to add/modify the Model you need to add-migration and update-database
+As I have just added ISBN prop to the model and did a fresh migration
+
+after adding the view for create new book we need to add functionality in Create.cshtml.cs. 
+When we press the create button on the view it should save the input to database and redirect as to index page where books are listed
+to do this redirection we need IActionResult in our OnPost()
+to store the data in db we need a book object in our OnPost(Book bookObj). But since we have a prop of book already.
+By adding [BindProperty] at the top of our prop it will automatically assume that will get the book as a parameter of OnPost() 
+No need to physically add parameter as so OnPost(Book bookObj)
+We need to do ModelState.IsValid if true(all the requirements match) save the object--book to the db 
+if false return the same page and prompt error msg
+in order to make our view page capable of promting error message we need to add a div with asp-validation-summary="ModelOnly" in our view form
+and add asp-validation-for="Book.Name"... for each of our inputs
+now we see that fields with required annotation prompts an error msg
+However, there is small problem that it does validation on the server side only 
+If we put a debugger on the if statement where ModelState.IsValid and hit create button again it will hit the debugger means it will post back
+to the server. We need to do the validatgion in the client side
+To avoid this we need to add a reference of _ValidationScriptsPartial in our Create view:
+@section Scripts{ 
+    <partial name="_ValidationScriptsPartial" />
+} 
+now if you check with debuger on you will see the it propts error on the view with out posting back to server side. 
+
+***
+Edit we need get and post
+1. get to fetch the data which needs modification
+2. post the modified data to db
+
+Firts we need to add this (asp-page="Edit" asp-route-id="@item.Id") to our edit link on the index page
+asp-page="Edit -- this will take the user to edit page
+asp-route-id="@item.Id" -- this make sure to fetch the item with matching id
+
+add a new razor page called edit
+we need dbcontext object
+a constructor with dbcontext parameter to equal the object
+a prop of Book BindProperty annotation
+modify the OnGet() method to OnGet(int id) because we want to fetch our items by id
+add code snypit (Book = await _db.Book.FindAsynch(id);) in order to find the item by id. Since we used await now the return type of-
+the method from void should be changed to (async Task) this is all to get the book.
+
+Crate a View for edit
+Copy everything from Create view page starting from <br /> until end and past it to edit view page
+modify the page heading Create to Edit and button value to Create to Update 
+Check if we click the edit it will take us to a edit page with object data 
+
+Lets work on Posting the modified data
+Create on Post method similar to what we did for create with a slight change that name author... needs to be revalued
+However, if we run and try to edit and press submit will prompt error
+To check the issue we need to put debuggers and find where the value is missing. 
+after check found that the id is 0 because we have not passed the add to the view
+by adding this (<input type="hidden" asp-for="Book.Id" />) to the view the error will fix
+
+Lets work on delete
+we need to add this (asp-page-handler="Delete" asp-route-id="@item.Id" onclick="return confirm('Are you sure you want to delete?')")
+to the index view page where delete button is
+and create a delete method in the index.cshtml.cs
+The method return type is Task<IActionResult> because it will redirect to the same page
+the name will be OnPostDelete becuase have Delete handler as above
+and we need an id parameter since we routed with id as above
+
+***
+Add some styling and API call
+
+for styling there is a css_js file with the links css and js for styling past them in _Layout.cshtml 
+the stylesheet ones goes at the top and the js ones go at the bottom
+
+To add API we need to add new folder called Controllers
+add controller to the folder called BookController / we can add API controller and MVC controller / we choose MVC controller this time
+we need our applicationDbContext
+Constructor
+Add a GetAll() method with [HttpGet] annotation
+The method return a json as so /Json(new { data = _db.Book.ToList() })/
+
+but our pipleline(startup.cs) is not yet supported API calls
+to do so we need to add /services.AddControllersWithViews();/ to ConfigureServices()
+and we need to add it to our middleware especially the end points
+endpoints.MapControllers();
+
+right at the top of our BookController class we add
+[Route("api/Book")] this is the route
+[ApiController] this make sure the bookcontroller is an Api controller
+
+An extra div is added to the booklist index view for the API call
+A JavaScript file was added to wwwroot/js called booklist.js with relevant data to display same data in a separate table through api call
+
+***
+Upsert
+Since the look in Create and Edit view page is similar we would like to use just one view page instead of the two.
+For that we need to create a new page and must be called Upsert
+
+Copy the edit view content from <br /> to the end and past it to Upsert view
+Copy the Edit.cshtml.cs file content from the object to before 2 brackets at end and past to Upsert.cshtml.cs
+do the required modifications if any error exists.
+
+The OnGet(int id) is just for edit expecting id. What if we need to create and there will not be any id. Lets make the int nullable by adding
+a questions mark infront of it -- OnGet(int? id) this way it will work both way with or without id.
+
+Inside the function we check if the id is null it will get the page for create else it will get the page for edit. 
+In the OnPost() we have done a slight change using Add() and Update() function 
+The previous update method was individually updating each item, but the update method will update all the items
+
+
+
+
+
+
+
